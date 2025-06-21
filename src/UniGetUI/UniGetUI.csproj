@@ -73,6 +73,7 @@
     <PackageReference Include="CommunityToolkit.WinUI.Controls.Segmented" Version="8.2.250402" />
     <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.250402" />
     <PackageReference Include="CommunityToolkit.WinUI.Controls.Sizers" Version="8.2.250402" />
+    <PackageReference Include="CommunityToolkit.WinUI.Controls.TokenizingTextBox" Version="8.2.250402" />
     <PackageReference Include="CommunityToolkit.WinUI.Converters" Version="8.2.250402" />
     <PackageReference Include="CommunityToolkit.WinUI.Media" Version="8.2.250402" />
     <PackageReference Include="H.NotifyIcon.WinUI" Version="2.3.0" />
@@ -270,6 +271,7 @@
     <ProjectReference Include="..\UniGetUI.Core.IconStore\UniGetUI.Core.IconEngine.csproj" />
     <ProjectReference Include="..\UniGetUI.Core.LanguageEngine\UniGetUI.Core.LanguageEngine.csproj" />
     <ProjectReference Include="..\UniGetUI.Core.Logger\UniGetUI.Core.Logging.csproj" />
+    <ProjectReference Include="..\UniGetUI.Core.SecureSettings\UniGetUI.Core.SecureSettings.csproj" />
     <ProjectReference Include="..\UniGetUI.Core.Settings\UniGetUI.Core.Settings.csproj" />
     <ProjectReference Include="..\UniGetUI.Core.Tools\UniGetUI.Core.Tools.csproj" />
     <ProjectReference Include="..\UniGetUI.Interface.BackgroundApi\UniGetUI.Interface.BackgroundApi.csproj" />
