@@ -57,6 +57,7 @@ namespace UniGetUI.Interface
             DismissableNotification.CloseButtonContent = CoreTools.Translate("Close");
 
             ExtendsContentIntoTitleBar = true;
+            // AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
             try
             {
                 SetTitleBar(MainContentGrid);
@@ -72,7 +73,7 @@ namespace UniGetUI.Interface
             LoadTrayMenu();
             ApplyTheme();
 
-            if (Settings.Get("ShowVersionNumberOnTitlebar"))
+            if (Settings.Get(Settings.K.ShowVersionNumberOnTitlebar))
             {
                 AddToSubtitle(CoreTools.Translate("version {0}", CoreData.VersionName));
             }
@@ -125,8 +126,6 @@ namespace UniGetUI.Interface
             _ = AutoUpdater.UpdateCheckLoop(this, UpdatesBanner);
 
 
-            TransferOldSettingsFormats();
-
             Activated += (_, e) =>
             {
                 if (e.WindowActivationState is WindowActivationState.CodeActivated
@@ -172,14 +171,14 @@ namespace UniGetUI.Interface
             try
             {
                 var proxyUri = Settings.GetProxyUrl();
-                if (proxyUri is null || !Settings.Get("EnableProxy"))
+                if (proxyUri is null || !Settings.Get(Settings.K.EnableProxy))
                 {
                     Environment.SetEnvironmentVariable("HTTP_PROXY", "", EnvironmentVariableTarget.Process);
                     return;
                 }
 
                 string content;
-                if (Settings.Get("EnableProxyAuth") is false)
+                if (Settings.Get(Settings.K.EnableProxyAuth) is false)
                 {
                     content = proxyUri.ToString();
                 }
@@ -221,45 +220,6 @@ namespace UniGetUI.Interface
             Title = "UniGetUI";
         }
 
-        private static void TransferOldSettingsFormats()
-        {
-            if (!Settings.Get("TransferredOldSettings"))
-            {
-                foreach (IPackageManager Manager in PEInterface.Managers)
-                {
-                    string SettingName = "Disable" + Manager.Name;
-                    if (Settings.Get(SettingName))
-                    {
-                        Settings.SetDictionaryItem("DisabledManagers", Manager.Name, true);
-                        Settings.Set(SettingName, false);
-                    }
-                }
-
-                // Dependency checks don't need to be transferred, because the worst case scenario is the user has to click the "don't show again" again
-
-                foreach (string Page in new[]{ "Discover", "Installed", "Bundles", "Updates"})
-                {
-                    if (Settings.Get($"HideToggleFilters{Page}Page"))
-                    {
-                        Settings.SetDictionaryItem("HideToggleFilters", Page, true);
-                        Settings.Set($"HideToggleFilters{Page}Page", false);
-                    }
-
-                    if (Settings.Get($"DisableInstantSearch{Page}Tab"))
-                    {
-                        Settings.SetDictionaryItem("DisableInstantSearch", Page, true);
-                        Settings.Set($"DisableInstantSearch{Page}Tab", false);
-                    }
-
-                    if (!int.TryParse(Settings.GetValue($"SidepanelWidth{Page}Page"), out int sidepanelWidth)) sidepanelWidth = 250;
-                    Settings.SetDictionaryItem("SidepanelWidths", Page, sidepanelWidth);
-                    Settings.Set($"SidepanelWidth{Page}Page", false);
-                }
-
-                Settings.Set("TransferredOldSettings", true);
-            }
-        }
-
         public void HandleNotificationActivation(AppNotificationActivatedEventArgs args)
         {
             args.Arguments.TryGetValue("action", out string? action);
@@ -298,7 +258,7 @@ namespace UniGetUI.Interface
         {
             AutoUpdater.ReleaseLockForAutoupdate_Window = true;
             SaveGeometry(Force: true);
-            if (!Settings.Get("DisableSystemTray") || AutoUpdater.UpdateReadyToBeInstalled)
+            if (!Settings.Get(Settings.K.DisableSystemTray) || AutoUpdater.UpdateReadyToBeInstalled)
             {
                 args.Cancel = true;
                 DWMThreadHelper.ChangeState_DWM(true);
@@ -662,7 +622,7 @@ namespace UniGetUI.Interface
                     }
                 }
 
-                if (Settings.Get("DisableSystemTray"))
+                if (Settings.Get(Settings.K.DisableSystemTray))
                 {
                     TrayIcon.Visibility = Visibility.Collapsed;
                 }
@@ -708,7 +668,7 @@ namespace UniGetUI.Interface
 
         public void ApplyTheme()
         {
-            string preferredTheme = Settings.GetValue("PreferredTheme");
+            string preferredTheme = Settings.GetValue(Settings.K.PreferredTheme);
             if (preferredTheme == "dark")
             {
                 MainApp.Instance.ThemeListener.CurrentTheme = ApplicationTheme.Dark;
@@ -885,13 +845,13 @@ namespace UniGetUI.Interface
                 $"{AppWindow.Position.X},{AppWindow.Position.Y},{AppWindow.Size.Width},{AppWindow.Size.Height},{windowState}";
 
             Logger.Debug($"Saving window geometry {geometry}");
-            Settings.SetValue("WindowGeometry", geometry);
+            Settings.SetValue(Settings.K.WindowGeometry, geometry);
         }
 
         private void RestoreGeometry()
         {
 
-            string geometry = Settings.GetValue("WindowGeometry");
+            string geometry = Settings.GetValue(Settings.K.WindowGeometry);
             string[] items = geometry.Split(",");
             if (items.Length != 5)
             {
@@ -995,19 +955,19 @@ namespace UniGetUI.Interface
             return true;
         }
 
-        private void TitleBar_PaneToggleRequested(WinUIEx.TitleBar sender, object args)
+        private void TitleBar_PaneToggleRequested(TitleBar sender, object args)
         {
             if (NavigationPage is null)
                 return;
 
             if(this.AppWindow.Size.Width >= 1600)
             {
-                Settings.Set("CollapseNavMenuOnWideScreen", NavigationPage.NavView.IsPaneOpen);
+                Settings.Set(Settings.K.CollapseNavMenuOnWideScreen, NavigationPage.NavView.IsPaneOpen);
             }
             NavigationPage.NavView.IsPaneOpen = !NavigationPage.NavView.IsPaneOpen;
         }
 
-        private void TitleBar_OnBackRequested(WinUIEx.TitleBar sender, object args)
+        private void TitleBar_OnBackRequested(TitleBar sender, object args)
         {
             NavigationPage?.NavigateBack();
         }

@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using UniGetUI.Core.Classes;
 using UniGetUI.Core.Logging;
@@ -15,6 +14,7 @@ using UniGetUI.PackageEngine.ManagerClasses.Classes;
 using UniGetUI.PackageEngine.ManagerClasses.Manager;
 using UniGetUI.PackageEngine.PackageClasses;
 using UniGetUI.PackageEngine.Structs;
+using Architecture = UniGetUI.PackageEngine.Enums.Architecture;
 
 namespace UniGetUI.PackageEngine.Managers.ScoopManager
 {
@@ -52,7 +52,7 @@ namespace UniGetUI.PackageEngine.Managers.ScoopManager
                 CanDownloadInstaller = true,
                 CanRemoveDataOnUninstall = true,
                 SupportsCustomArchitectures = true,
-                SupportedCustomArchitectures = [Architecture.X86, Architecture.X64, Architecture.Arm64],
+                SupportedCustomArchitectures = [Architecture.x86, Architecture.x64, Architecture.arm64],
                 SupportsCustomScopes = true,
                 SupportsCustomSources = true,
                 Sources = new SourceCapabilities
@@ -374,9 +374,18 @@ namespace UniGetUI.PackageEngine.Managers.ScoopManager
 
         protected override ManagerStatus LoadManager()
         {
+            string path = Path.Join(Environment.SystemDirectory, "windowspowershell\\v1.0\\powershell.exe");
+            var pwsh7 = CoreTools.Which("pwsh.exe");
+            if (pwsh7.Item1)
+            {
+                Logger.Info("Scoop found PowerShell7, PowerShell7 will be used...");
+                path = pwsh7.Item2;
+            }
+
+
             ManagerStatus status = new()
             {
-                ExecutablePath = Path.Join(Environment.SystemDirectory, "windowspowershell\\v1.0\\powershell.exe")
+                ExecutablePath = path
             };
 
             Process process = new()
@@ -397,7 +406,7 @@ namespace UniGetUI.PackageEngine.Managers.ScoopManager
             status.Found = CoreTools.Which("scoop").Item1;
 
             Status = status; // Wee need this for the RunCleanup method to get the executable path
-            if (status.Found && IsEnabled() && Settings.Get("EnableScoopCleanup"))
+            if (status.Found && IsEnabled() && Settings.Get(Settings.K.EnableScoopCleanup))
             {
                 RunCleanup();
             }
