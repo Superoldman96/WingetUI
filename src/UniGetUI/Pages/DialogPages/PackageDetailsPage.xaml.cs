@@ -14,6 +14,7 @@ using UniGetUI.PackageEngine.PackageClasses;
 using UniGetUI.Interface.Enums;
 using UniGetUI.Interface.Telemetry;
 using UniGetUI.Interface.Widgets;
+using UniGetUI.Core.Logging;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -102,8 +103,14 @@ namespace UniGetUI.Interface.Dialogs
             UpgradablePackage = Package.GetUpgradablePackage();
             InstalledPackage = UpgradablePackage?.GetInstalledPackage() ?? Package.GetInstalledPackage();
 
-            var options = InstallationOptions.LoadApplicable(package).ToSerializable();
+            var options = InstallOptionsFactory.LoadForPackage(package);
             InstallOptionsPage = new InstallOptionsPage(package, OperationRole, options);
+            InstallOptionsPage.Close += (_, _) => Close?.Invoke(this, EventArgs.Empty);
+            InstallOptionsPage.HideCloseButton();
+            InstallOptionsPage.HideHeaderBar();
+            InstallOptionsPage.MaxWidth = double.PositiveInfinity;
+            InstallOptionsPage.HorizontalAlignment = HorizontalAlignment.Stretch;
+            InstallOptionsPage.Margin = new(0, -16, 0, 0);
             InstallOptionsExpander.Content = InstallOptionsPage;
 
             MainActionButton.Padding = new Thickness(0);
@@ -578,12 +585,8 @@ namespace UniGetUI.Interface.Dialogs
         {
             Close?.Invoke(this, EventArgs.Empty);
 
-            var newOptions = await Task.Run(
-                () => InstallationOptions.FromSerialized(
-                    InstallOptionsPage.GetUpdatedOptions().GetAwaiter().GetResult(),
-                    package)
-            );
-            newOptions.SaveToDisk();
+            var newOptions = await InstallOptionsPage.GetUpdatedOptions();
+            await InstallOptionsFactory.SaveForPackageAsync(newOptions, package);
 
             if (AsAdmin is not null) newOptions.RunAsAdministrator = (bool)AsAdmin;
             if (Interactive is not null) newOptions.InteractiveInstallation = (bool)Interactive;
@@ -605,6 +608,27 @@ namespace UniGetUI.Interface.Dialogs
             else
             {
                 throw new ArgumentException("PackageDetailsPage.DoAction should never be called with action=None");
+            }
+        }
+
+        private async void SaveInstallOptionsButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                SaveInstallOptionsButton.IsEnabled = false;
+                SaveInstallOptionsButton.Content = new FontIcon { Glyph = "\uE9F5" };
+                var options = await InstallOptionsPage.GetUpdatedOptions();
+                await InstallOptionsFactory.SaveForPackageAsync(options, Package);
+                await Task.Delay(400); // Give feedback to the user that things are being done
+                SaveInstallOptionsButton.Content = new FontIcon { Glyph = "\uE73E" };
+                SaveInstallOptionsButton.IsEnabled = true;
+                await Task.Delay(2000);
+                SaveInstallOptionsButton.Content = CoreTools.Translate("Save");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("An error occurred while saving install options");
+                Logger.Error(ex);
             }
         }
     }

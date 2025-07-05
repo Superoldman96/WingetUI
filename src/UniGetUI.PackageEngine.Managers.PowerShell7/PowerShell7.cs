@@ -27,6 +27,7 @@ namespace UniGetUI.PackageEngine.Managers.PowerShell7Manager
                 SupportsPreRelease = true,
                 CanDownloadInstaller = true,
                 SupportsCustomPackageIcons = true,
+                CanUninstallPreviousVersionsAfterUpdate = true,
                 Sources = new SourceCapabilities
                 {
                     KnowsPackageCount = false,
@@ -47,7 +48,6 @@ namespace UniGetUI.PackageEngine.Managers.PowerShell7Manager
                 InstallVerb = "Install-PSResource",
                 UninstallVerb = "Uninstall-PSResource",
                 UpdateVerb = "Update-PSResource",
-                ExecutableCallArgs = " -NoProfile -Command",
                 KnownSources = [new ManagerSource(this, "PSGallery", new Uri("https://www.powershellgallery.com/api/v2")),
                                 new ManagerSource(this, "PoshTestGallery", new Uri("https://www.poshtestgallery.com/api/v2"))],
                 DefaultSource = new ManagerSource(this, "PSGallery", new Uri("https://www.powershellgallery.com/api/v2")),
@@ -65,7 +65,7 @@ namespace UniGetUI.PackageEngine.Managers.PowerShell7Manager
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = Status.ExecutablePath,
-                    Arguments = Properties.ExecutableCallArgs + " \"Get-InstalledPSResource | Format-Table -Property Name,Version,Repository\"",
+                    Arguments = Status.ExecutableCallArgs + " \"Get-InstalledPSResource | Format-Table -Property Name,Version,Repository\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     RedirectStandardInput = true,
@@ -115,14 +115,21 @@ namespace UniGetUI.PackageEngine.Managers.PowerShell7Manager
 
             return Packages;
         }
+
+        public override IReadOnlyList<string> FindCandidateExecutableFiles()
+        {
+            return CoreTools.WhichMultiple("pwsh.exe");
+        }
+
         protected override ManagerStatus LoadManager()
         {
-            var (found, path) = CoreTools.Which("pwsh.exe");
+            var (found, path) = GetExecutableFile();
 
             ManagerStatus status = new()
             {
                 ExecutablePath = path,
                 Found = found,
+                ExecutableCallArgs = " -NoProfile -Command",
             };
 
             if (!status.Found)
@@ -140,7 +147,7 @@ namespace UniGetUI.PackageEngine.Managers.PowerShell7Manager
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     CreateNoWindow = true,
-                    StandardOutputEncoding = System.Text.Encoding.UTF8
+                    StandardOutputEncoding = Encoding.UTF8
                 }
             };
             process.Start();

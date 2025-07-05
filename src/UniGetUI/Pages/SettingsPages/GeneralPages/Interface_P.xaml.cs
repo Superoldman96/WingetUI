@@ -21,9 +21,9 @@ namespace UniGetUI.Pages.SettingsPages.GeneralPages
         {
             this.InitializeComponent();
 
-            if (Settings.GetValue("PreferredTheme") == "")
+            if (Settings.GetValue(Settings.K.PreferredTheme) == "")
             {
-                Settings.SetValue("PreferredTheme", "auto");
+                Settings.SetValue(Settings.K.PreferredTheme, "auto");
             }
 
             ThemeSelector.AddItem(CoreTools.AutoTranslated("Light"), "light");
@@ -69,8 +69,8 @@ namespace UniGetUI.Pages.SettingsPages.GeneralPages
                 Logger.Error(ex);
             }
             ShowRestartBanner(this, new());
-            PackageWrapper.ResetIconCache();
-            Package.ResetIconCache();
+            // PackageWrapper.ResetIconCache();
+            // Package.ResetIconCache();
             LoadIconCacheSize();
         }
 

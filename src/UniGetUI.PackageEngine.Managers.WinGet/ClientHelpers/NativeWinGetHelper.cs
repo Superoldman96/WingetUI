@@ -66,7 +66,7 @@ internal sealed class NativeWinGetHelper : IWinGetManagerHelper
             ConnectResult result = CatalogReference.Connect();
             if (result.Status == ConnectResultStatus.Ok)
             {
-                foreach (var filter_type in new PackageMatchField[] { PackageMatchField.Name, PackageMatchField.Id, PackageMatchField.Moniker })
+                foreach (var filter_type in new[] { PackageMatchField.Name, PackageMatchField.Id, PackageMatchField.Moniker })
                 {
                     FindPackagesOptions PackageFilters = Factory.CreateFindPackagesOptions();
 
@@ -358,8 +358,8 @@ internal sealed class NativeWinGetHelper : IWinGetManagerHelper
         List<string> output = [];
         ProcessStartInfo startInfo = new()
         {
-            FileName = Manager.WinGetBundledPath,
-            Arguments = Manager.Properties.ExecutableCallArgs + " show " + WinGetPkgOperationHelper.GetIdNamePiece(details.Package) +
+            FileName = Manager.BundledWinGetPath,
+            Arguments = Manager.Status.ExecutableCallArgs + " show " + WinGetPkgOperationHelper.GetIdNamePiece(details.Package) +
                         " --disable-interactivity --accept-source-agreements --source " +
                         details.Package.Source.Name,
             RedirectStandardOutput = true,

@@ -101,7 +101,7 @@ namespace UniGetUI.PackageEngine.Managers.PipManager
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = Manager.Status.ExecutablePath,
-                    Arguments = Manager.Properties.ExecutableCallArgs + " index versions " + package.Id + " " + Pip.GetProxyArgument(),
+                    Arguments = Manager.Status.ExecutableCallArgs + " index versions " + package.Id + " " + Pip.GetProxyArgument(),
                     RedirectStandardOutput = true,
                     RedirectStandardInput = true,
                     RedirectStandardError = true,
@@ -111,7 +111,7 @@ namespace UniGetUI.PackageEngine.Managers.PipManager
                 }
             };
 
-            IProcessTaskLogger logger = Manager.TaskLogger.CreateNew(Enums.LoggableTaskType.LoadPackageVersions, p);
+            IProcessTaskLogger logger = Manager.TaskLogger.CreateNew(LoggableTaskType.LoadPackageVersions, p);
             p.Start();
 
             string? line;

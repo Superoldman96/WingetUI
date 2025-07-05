@@ -52,7 +52,7 @@ namespace UniGetUI.PackageEngine.Operations
             bool admin = false;
            if (ForceAsAdministrator || Source.Manager.Capabilities.Sources.MustBeInstalledAsAdmin)
            {
-                if (Settings.Get("DoCacheAdminRights") || Settings.Get("DoCacheAdminRightsForBatches"))
+                if (Settings.Get(Settings.K.DoCacheAdminRights) || Settings.Get(Settings.K.DoCacheAdminRightsForBatches))
                 {
                     CoreTools.CacheUACForCurrentProcess().GetAwaiter().GetResult();
                 }
@@ -62,13 +62,13 @@ namespace UniGetUI.PackageEngine.Operations
 
                 admin = true;
                 process.StartInfo.FileName = CoreData.ElevatorPath;
-                process.StartInfo.Arguments = $"\"{Source.Manager.Status.ExecutablePath}\" " + Source.Manager.Properties.ExecutableCallArgs + " " + string.Join(" ", Source.Manager.SourcesHelper.GetAddSourceParameters(Source));
+                process.StartInfo.Arguments = $"\"{Source.Manager.Status.ExecutablePath}\" " + Source.Manager.Status.ExecutableCallArgs + " " + string.Join(" ", Source.Manager.SourcesHelper.GetAddSourceParameters(Source));
 
             }
             else
             {
                 process.StartInfo.FileName = Source.Manager.Status.ExecutablePath;
-                process.StartInfo.Arguments = Source.Manager.Properties.ExecutableCallArgs + " " + string.Join(" ", Source.Manager.SourcesHelper.GetAddSourceParameters(Source));
+                process.StartInfo.Arguments = Source.Manager.Status.ExecutableCallArgs + " " + string.Join(" ", Source.Manager.SourcesHelper.GetAddSourceParameters(Source));
             }
 
            ApplyCapabilities(admin, false, false, null);
@@ -105,7 +105,7 @@ namespace UniGetUI.PackageEngine.Operations
             bool admin = false;
             if (ForceAsAdministrator || Source.Manager.Capabilities.Sources.MustBeInstalledAsAdmin)
             {
-                if (Settings.Get("DoCacheAdminRights") || Settings.Get("DoCacheAdminRightsForBatches"))
+                if (Settings.Get(Settings.K.DoCacheAdminRights) || Settings.Get(Settings.K.DoCacheAdminRightsForBatches))
                 {
                     CoreTools.CacheUACForCurrentProcess().GetAwaiter().GetResult();
                 }
@@ -115,12 +115,12 @@ namespace UniGetUI.PackageEngine.Operations
 
                 admin = true;
                 process.StartInfo.FileName = CoreData.ElevatorPath;
-                process.StartInfo.Arguments = $"\"{Source.Manager.Status.ExecutablePath}\" " + Source.Manager.Properties.ExecutableCallArgs + " " + string.Join(" ", Source.Manager.SourcesHelper.GetRemoveSourceParameters(Source));
+                process.StartInfo.Arguments = $"\"{Source.Manager.Status.ExecutablePath}\" " + Source.Manager.Status.ExecutableCallArgs + " " + string.Join(" ", Source.Manager.SourcesHelper.GetRemoveSourceParameters(Source));
             }
             else
             {
                 process.StartInfo.FileName = Source.Manager.Status.ExecutablePath;
-                process.StartInfo.Arguments = Source.Manager.Properties.ExecutableCallArgs + " " + string.Join(" ", Source.Manager.SourcesHelper.GetRemoveSourceParameters(Source));
+                process.StartInfo.Arguments = Source.Manager.Status.ExecutableCallArgs + " " + string.Join(" ", Source.Manager.SourcesHelper.GetRemoveSourceParameters(Source));
             }
             ApplyCapabilities(admin, false, false, null);
         }

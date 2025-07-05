@@ -16,10 +16,10 @@ namespace UniGetUI.Core.Tools
     public static class CoreTools
     {
 
-        public static readonly HttpClientHandler HttpClientConfig = new()
+        public static HttpClientHandler HttpClientConfig
         {
-            AutomaticDecompression = DecompressionMethods.All
-        };
+            get => new HttpClientHandler() { AutomaticDecompression = DecompressionMethods.All };
+        }
 
         public static HttpClientHandler GenericHttpClientParameters
         {
@@ -29,8 +29,8 @@ namespace UniGetUI.Core.Tools
                 IWebProxy? proxy = null;
                 ICredentials? creds = null;
 
-                if (Settings.Get("EnableProxy")) proxyUri = Settings.GetProxyUrl();
-                if (Settings.Get("EnableProxyAuth")) creds = Settings.GetProxyCredentials();
+                if (Settings.Get(Settings.K.EnableProxy)) proxyUri = Settings.GetProxyUrl();
+                if (Settings.Get(Settings.K.EnableProxyAuth)) creds = Settings.GetProxyCredentials();
                 if (proxyUri is not null) proxy = new WebProxy()
                 {
                     Address = proxyUri,
@@ -103,13 +103,13 @@ namespace UniGetUI.Core.Tools
         /// Finds an executable in path and returns its location
         /// </summary>
         /// <param name="command">The executable alias to find</param>
-        /// <returns>A tuple containing: a boolean hat represents whether the path was found or not; the path to the file if found.</returns>
+        /// <returns>A tuple containing: a boolean that represents whether the path was found or not; the path to the file if found.</returns>
         public static async Task<Tuple<bool, string>> WhichAsync(string command)
         {
             return await Task.Run(() => Which(command));
         }
 
-        public static Tuple<bool, string> Which(string command, bool updateEnv = true)
+        public static List<string> WhichMultiple(string command, bool updateEnv = true)
         {
             command = command.Replace(";", "").Replace("&", "").Trim();
             Logger.Debug($"Begin \"which\" search for command {command}");
@@ -142,28 +142,34 @@ namespace UniGetUI.Core.Tools
             try
             {
                 process.Start();
-                string? line = process.StandardOutput.ReadLine();
-                string output;
-
-                if (line is null) output = "";
-                else output = line.Trim();
+                string[] lines = process.StandardOutput.ReadToEnd()
+                    .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries);
 
                 process.WaitForExit();
 
-                if (process.ExitCode != 0 || output == "")
+                if (process.ExitCode is not 0)
+                    Logger.Warn($"Call to WhichMultiple with file {command} returned non-zero status {process.ExitCode}");
+
+                if (lines.Length is 0)
                 {
                     Logger.ImportantInfo($"Command {command} was not found on the system");
-                    return new Tuple<bool, string>(false, "");
+                    return [];
                 }
 
-                Logger.Debug($"Command {command} was found on {output}");
-                return new Tuple<bool, string>(File.Exists(output), output);
+                Logger.Debug($"Command {command} was found on {lines[0]} (with {lines.Length-1} more occurrences)");
+                return lines.ToList();
             }
             catch
             {
-                if (updateEnv) return Which(command, false);
+                if (updateEnv) return WhichMultiple(command, false);
                 throw;
             }
+        }
+
+        public static Tuple<bool, string> Which(string command, bool updateEnv = true)
+        {
+            var paths = WhichMultiple(command, updateEnv);
+            return new(paths.Any(), paths.Any() ? paths[0]: "");
         }
 
         /// <summary>
@@ -608,7 +614,7 @@ namespace UniGetUI.Core.Tools
 
         public static void _waitForInternetConnection()
         {
-            if (Settings.Get("DisableWaitForInternetConnection")) return;
+            if (Settings.Get(Settings.K.DisableWaitForInternetConnection)) return;
 
             Logger.Debug("Checking for internet connectivity...");
             bool internetLost = false;
@@ -694,5 +700,9 @@ namespace UniGetUI.Core.Tools
         {
             return LanguageEngine?.Locale ?? "Unset/Unknown";
         }
+
+        private static readonly HashSet<char> illegalPathChars = Path.GetInvalidFileNameChars().ToHashSet();
+        public static string MakeValidFileName(string name)
+            => string.Concat(name.Where(x => !illegalPathChars.Contains(x)));
     }
 }
