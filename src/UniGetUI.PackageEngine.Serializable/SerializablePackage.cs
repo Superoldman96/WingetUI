@@ -12,7 +12,7 @@ namespace UniGetUI.PackageEngine.Classes.Serializable
         public string Source { get; set; } = "";
         public string ManagerName { get; set; } = "";
 
-        public SerializableInstallationOptions InstallationOptions { get; set; } = new();
+        public InstallOptions InstallationOptions { get; set; } = new();
         public SerializableUpdatesOptions Updates { get; set; } = new();
 
         public override SerializablePackage Copy()
@@ -39,6 +39,30 @@ namespace UniGetUI.PackageEngine.Classes.Serializable
 
             this.InstallationOptions = new(data[nameof(InstallationOptions)] ?? new JsonObject());
             this.Updates = new(data[nameof(Updates)] ?? new JsonObject());
+        }
+
+        public override JsonObject AsJsonNode()
+        {
+            JsonObject obj = new();
+            obj.Add(nameof(Id), Id);
+            obj.Add(nameof(Name), Name);
+            obj.Add(nameof(Version), Version);
+            obj.Add(nameof(Source), Source);
+            obj.Add(nameof(ManagerName), ManagerName);
+
+            var ioNode = InstallationOptions.AsJsonNode();
+            if (ioNode.Count > 0)
+            {
+                obj.Add(nameof(InstallationOptions), InstallationOptions.AsJsonNode());
+            }
+
+            var updNode = Updates.AsJsonNode();
+            if (updNode.Count > 0)
+            {
+                obj.Add(nameof(Updates), updNode);
+            }
+
+            return obj;
         }
 
         public SerializablePackage() : base()

@@ -12,6 +12,7 @@ using UniGetUI.PackageEngine.Enums;
 using UniGetUI.PackageEngine.Interfaces;
 using UniGetUI.PackageEngine.Managers.WingetManager;
 using UniGetUI.Pages.DialogPages;
+using UniGetUI.Services;
 
 namespace UniGetUI.Interface.SoftwarePages
 {
@@ -38,6 +39,7 @@ namespace UniGetUI.Interface.SoftwarePages
             DisableFilterOnQueryChange = false,
             MegaQueryBlockEnabled = false,
             ShowLastLoadTime = false,
+            DisableReload = false,
             PackagesAreCheckedByDefault = false,
             DisableSuggestedResultsRadio = true,
             PageName = "Installed",
@@ -285,13 +287,18 @@ namespace UniGetUI.Interface.SoftwarePages
         {
             if (!HasDoneBackup)
             {
-                if (Settings.Get("EnablePackageBackup"))
+                if (Settings.Get(Settings.K.EnablePackageBackup_LOCAL))
                 {
-                    _ = BackupPackages();
+                    _ = BackupPackages_LOCAL();
+                }
+
+                if (Settings.Get(Settings.K.EnablePackageBackup_CLOUD))
+                {
+                    _ = BackupPackages_CLOUD();
                 }
             }
 
-            if (WinGet.NO_PACKAGES_HAVE_BEEN_LOADED && !Settings.Get("DisableWinGetMalfunctionDetector"))
+            if (WinGet.NO_PACKAGES_HAVE_BEEN_LOADED && !Settings.Get(Settings.K.DisableWinGetMalfunctionDetector))
             {
                 var infoBar = MainApp.Instance.MainWindow.WinGetWarningBanner;
                 infoBar.IsOpen = true;
@@ -361,21 +368,41 @@ namespace UniGetUI.Interface.SoftwarePages
 
         }
 
-        public static async Task BackupPackages()
+        public static Task<string> GenerateBackupContents()
         {
+            Logger.Debug("Starting package backup");
+            List<IPackage> packagesToExport = [];
+            foreach (IPackage package in PEInterface.InstalledPackagesLoader.Packages)
+            {
+                packagesToExport.Add(package);
+            }
 
+            return PackageBundlesPage.CreateBundle(packagesToExport.ToArray());
+        }
+
+        public static async Task BackupPackages_CLOUD()
+        {
             try
             {
-                Logger.Debug("Starting package backup");
-                List<IPackage> packagesToExport = [];
-                foreach (IPackage package in PEInterface.InstalledPackagesLoader.Packages)
-                {
-                    packagesToExport.Add(package);
-                }
+                string backupContents = await GenerateBackupContents();
+                var authService = new GitHubAuthService();
+                var backupService = new GitHubBackupService(authService);
+                await backupService.UploadPackageBundle(backupContents);
+                Logger.ImportantInfo("Cloud backup succeeded");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("An error occurred while performing a CLOUD backup");
+                Logger.Error(ex);
+            }
+        }
 
-                string BackupContents = await PackageBundlesPage.CreateBundle(packagesToExport.ToArray(), BundleFormatType.UBUNDLE);
-
-                string dirName = Settings.GetValue("ChangeBackupOutputDirectory");
+        public static async Task BackupPackages_LOCAL()
+        {
+            try
+            {
+                string backupContents = await GenerateBackupContents();
+                string dirName = Settings.GetValue(Settings.K.ChangeBackupOutputDirectory);
                 if (dirName == "")
                 {
                     dirName = CoreData.UniGetUI_DefaultBackupDirectory;
@@ -386,13 +413,13 @@ namespace UniGetUI.Interface.SoftwarePages
                     Directory.CreateDirectory(dirName);
                 }
 
-                string fileName = Settings.GetValue("ChangeBackupFileName");
+                string fileName = Settings.GetValue(Settings.K.ChangeBackupFileName);
                 if (fileName == "")
                 {
                     fileName = CoreTools.Translate("{pcName} installed packages", new Dictionary<string, object?> { { "pcName", Environment.MachineName } });
                 }
 
-                if (Settings.Get("EnableBackupTimestamping"))
+                if (Settings.Get(Settings.K.EnableBackupTimestamping))
                 {
                     fileName += " " + DateTime.Now.ToString("yyyy-MM-dd HH-mm-ss");
                 }
@@ -400,13 +427,13 @@ namespace UniGetUI.Interface.SoftwarePages
                 fileName += ".ubundle";
 
                 string filePath = Path.Combine(dirName, fileName);
-                await File.WriteAllTextAsync(filePath, BackupContents);
+                await File.WriteAllTextAsync(filePath, backupContents);
                 HasDoneBackup = true;
                 Logger.ImportantInfo("Backup saved to " + filePath);
             }
             catch (Exception ex)
             {
-                Logger.Error("An error occurred while performing a backup");
+                Logger.Error("An error occurred while performing a LOCAL backup");
                 Logger.Error(ex);
             }
         }
@@ -426,11 +453,8 @@ namespace UniGetUI.Interface.SoftwarePages
         private void MenuReinstall_Invoked(object sender, RoutedEventArgs args)
             => _ = MainApp.Operations.Install(SelectedItem, TEL_InstallReferral.ALREADY_INSTALLED);
 
-        private async void MenuUninstallThenReinstall_Invoked(object sender, RoutedEventArgs args)
-        {
-            var op = await MainApp.Operations.Uninstall(SelectedItem, ignoreParallel: true);
-            _ = MainApp.Operations.Install(SelectedItem, TEL_InstallReferral.ALREADY_INSTALLED, ignoreParallel: true, req: op);
-        }
+        private void MenuUninstallThenReinstall_Invoked(object sender, RoutedEventArgs args)
+            => _ = MainApp.Operations.UninstallThenReinstall(SelectedItem, TEL_InstallReferral.ALREADY_INSTALLED);
 
         private async void MenuIgnorePackage_Invoked(object sender, RoutedEventArgs args)
         {

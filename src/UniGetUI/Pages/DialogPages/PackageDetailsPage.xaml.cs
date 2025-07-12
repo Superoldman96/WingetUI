@@ -14,6 +14,7 @@ using UniGetUI.PackageEngine.PackageClasses;
 using UniGetUI.Interface.Enums;
 using UniGetUI.Interface.Telemetry;
 using UniGetUI.Interface.Widgets;
+using UniGetUI.Core.Logging;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -93,6 +94,9 @@ namespace UniGetUI.Interface.Dialogs
             SetTextToItem(DownloadInstaller_Button, CoreTools.Translate("Download installer"));
             SetTextToItem(UpdateDate_Label, CoreTools.Translate("Last updated:") + " ");
             SetTextToItem(UpdateDate_Content, LoadingString);
+            SetTextToItem(Dependencies_Label, CoreTools.Translate("Dependencies:") + " ");
+            DependenciesParagraph.Inlines.Clear();
+            DependenciesParagraph.Inlines.Add(new Run() { Text = LoadingString, Foreground = new SolidColorBrush(color: Color.FromArgb(255, 127, 127, 127)), });
             SetTextToItem(ReleaseNotes_Label, CoreTools.Translate("Release notes") + ": ");
             SetTextToItem(ReleaseNotes_Content, LoadingString);
             SetTextToItem(ReleaseNotesUrl_Label, CoreTools.Translate("Release notes URL") + ": ");
@@ -102,8 +106,14 @@ namespace UniGetUI.Interface.Dialogs
             UpgradablePackage = Package.GetUpgradablePackage();
             InstalledPackage = UpgradablePackage?.GetInstalledPackage() ?? Package.GetInstalledPackage();
 
-            var options = InstallationOptions.LoadApplicable(package).ToSerializable();
+            var options = InstallOptionsFactory.LoadForPackage(package);
             InstallOptionsPage = new InstallOptionsPage(package, OperationRole, options);
+            InstallOptionsPage.Close += (_, _) => Close?.Invoke(this, EventArgs.Empty);
+            InstallOptionsPage.HideCloseButton();
+            InstallOptionsPage.HideHeaderBar();
+            InstallOptionsPage.MaxWidth = double.PositiveInfinity;
+            InstallOptionsPage.HorizontalAlignment = HorizontalAlignment.Stretch;
+            InstallOptionsPage.Margin = new(0, -16, 0, 0);
             InstallOptionsExpander.Content = InstallOptionsPage;
 
             MainActionButton.Padding = new Thickness(0);
@@ -351,7 +361,7 @@ namespace UniGetUI.Interface.Dialogs
             SetTextToItem(InstallerHash_Content, details.InstallerHash);
             if (Package.Manager.Capabilities.CanDownloadInstaller)
             {
-                SetTextToItem(InstallerSize_Content, details.InstallerSize > 0 ? $" ({CoreTools.FormatAsSize((long)(details.InstallerSize * 1024 * 1024), 2)})" : $" ({CoreTools.Translate("Unknown size")})");
+                SetTextToItem(InstallerSize_Content, details.InstallerSize > 0 ? $" ({CoreTools.FormatAsSize(details.InstallerSize, 2)})" : $" ({CoreTools.Translate("Unknown size")})");
                 SetTextToItem(DownloadInstaller_Button, CoreTools.Translate("Download installer"));
             }
             else
@@ -364,6 +374,52 @@ namespace UniGetUI.Interface.Dialogs
             SetTextToItem(UpdateDate_Content, details.UpdateDate);
             SetTextToItem(ReleaseNotes_Content, details.ReleaseNotes);
             SetTextToItem(ReleaseNotesUrl_Content, details.ReleaseNotesUrl);
+
+            if (!details.Package.Manager.Capabilities.CanListDependencies)
+            {
+                DependenciesParagraph.Inlines.Clear();
+                DependenciesParagraph.Inlines.Add(new Run()
+                {
+                    Text = CoreTools.Translate("Not available"),
+                    Foreground = new SolidColorBrush(color: Color.FromArgb(255, 127, 127, 127)),
+                });
+            }
+            else if (details.Dependencies.Any())
+            {
+                DependenciesParagraph.Inlines.Clear();
+
+                foreach (var dep in details.Dependencies)
+                {
+                    DependenciesParagraph.Inlines.Add(new Run()
+                    {
+                        Text = $"  • {dep.Name}",
+                        FontStyle = dep.Mandatory? FontStyle.Normal : FontStyle.Italic,
+                        FontWeight = new FontWeight(600)
+                    });
+
+                    string line = $" (";
+                    if (dep.Version.Any()) line += CoreTools.Translate("Version:") + $" {dep.Version}, ";
+                    line += $"{(dep.Mandatory ? CoreTools.Translate("mandatory") : CoreTools.Translate("optional"))})";
+
+                    DependenciesParagraph.Inlines.Add(new Run()
+                    {
+                        Text = line,
+                        FontStyle = dep.Mandatory? FontStyle.Normal : FontStyle.Italic,
+                    });
+                    DependenciesParagraph.Inlines.Add(new LineBreak());
+                }
+                if(DependenciesParagraph.Inlines.Any() && DependenciesParagraph.Inlines.Last() is LineBreak)
+                    DependenciesParagraph.Inlines.RemoveAt(DependenciesParagraph.Inlines.Count-1);
+            }
+            else
+            {
+                DependenciesParagraph.Inlines.Clear();
+                DependenciesParagraph.Inlines.Add(new Run()
+                {
+                    Text = "\t" + CoreTools.Translate("No dependencies specified"),
+                    Foreground = new SolidColorBrush(color: Color.FromArgb(255, 127, 127, 127)),
+                });
+            }
 
             ShowableTags.Clear();
             foreach (string tag in details.Tags)
@@ -578,12 +634,8 @@ namespace UniGetUI.Interface.Dialogs
         {
             Close?.Invoke(this, EventArgs.Empty);
 
-            var newOptions = await Task.Run(
-                () => InstallationOptions.FromSerialized(
-                    InstallOptionsPage.GetUpdatedOptions().GetAwaiter().GetResult(),
-                    package)
-            );
-            newOptions.SaveToDisk();
+            var newOptions = await InstallOptionsPage.GetUpdatedOptions();
+            await InstallOptionsFactory.SaveForPackageAsync(newOptions, package);
 
             if (AsAdmin is not null) newOptions.RunAsAdministrator = (bool)AsAdmin;
             if (Interactive is not null) newOptions.InteractiveInstallation = (bool)Interactive;
@@ -605,6 +657,27 @@ namespace UniGetUI.Interface.Dialogs
             else
             {
                 throw new ArgumentException("PackageDetailsPage.DoAction should never be called with action=None");
+            }
+        }
+
+        private async void SaveInstallOptionsButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                SaveInstallOptionsButton.IsEnabled = false;
+                SaveInstallOptionsButton.Content = new FontIcon { Glyph = "\uE9F5" };
+                var options = await InstallOptionsPage.GetUpdatedOptions();
+                await InstallOptionsFactory.SaveForPackageAsync(options, Package);
+                await Task.Delay(400); // Give feedback to the user that things are being done
+                SaveInstallOptionsButton.Content = new FontIcon { Glyph = "\uE73E" };
+                SaveInstallOptionsButton.IsEnabled = true;
+                await Task.Delay(2000);
+                SaveInstallOptionsButton.Content = CoreTools.Translate("Save");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("An error occurred while saving install options");
+                Logger.Error(ex);
             }
         }
     }

@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Xml;
 using System.Xml.Serialization;
 using ExternalLibraries.Pickers;
 using Microsoft.UI.Text;
@@ -10,6 +9,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
 using UniGetUI.Core.Data;
 using UniGetUI.Core.Logging;
+using UniGetUI.Core.SettingsEngine.SecureSettings;
 using UniGetUI.Core.Tools;
 using UniGetUI.Interface.Enums;
 using UniGetUI.Interface.Telemetry;
@@ -55,6 +55,7 @@ namespace UniGetUI.Interface.SoftwarePages
             DisableFilterOnQueryChange = false,
             MegaQueryBlockEnabled = false,
             ShowLastLoadTime = false,
+            DisableReload = true,
             PackagesAreCheckedByDefault = false,
             DisableSuggestedResultsRadio = true,
             PageName = "Bundles",
@@ -76,8 +77,6 @@ namespace UniGetUI.Interface.SoftwarePages
             {
                 HasUnsavedChanges = true;
             };
-
-            ReloadButton.Visibility = Visibility.Collapsed;
         }
 
         public override BetterMenu GenerateContextMenu()
@@ -267,11 +266,7 @@ namespace UniGetUI.Interface.SoftwarePages
             };
 
             HelpButton.Click += (_, _) => { MainApp.Instance.MainWindow.NavigationPage.ShowHelp(); };
-
-            NewBundle.Click += (s, e) =>
-            {
-                _ = AskForNewBundle();
-            };
+            NewBundle.Click += async (s, e) => await AskForNewBundle();
 
             RemoveSelected.Click += (_, _) =>
             {
@@ -283,16 +278,8 @@ namespace UniGetUI.Interface.SoftwarePages
             InstallSkipHash.Click += async (_, _) => await ImportAndInstallPackage(FilteredPackages.GetCheckedPackages(), skiphash: true);
             InstallInteractive.Click += async (_, _) => await ImportAndInstallPackage(FilteredPackages.GetCheckedPackages(), interactive: true);
             InstallAsAdmin.Click += async (_, _) => await ImportAndInstallPackage(FilteredPackages.GetCheckedPackages(), elevated: true);
-
-            OpenBundle.Click += async (_, _) =>
-            {
-                await OpenFromFile();
-            };
-
-            SaveBundle.Click += async (_, _) =>
-            {
-                await SaveFile();
-            };
+            OpenBundle.Click += async (_, _) => await AskOpenFromFile();
+            SaveBundle.Click += async (_, _) => await SaveFile();
 
             SharePackage.Click += (_, _) =>
             {
@@ -450,25 +437,32 @@ namespace UniGetUI.Interface.SoftwarePages
             Loader.Remove(package);
         }
 
-        public async Task OpenFromFile(string? file = null)
+        public async Task OpenFromString(string payload, BundleFormatType format, string source)
+        {
+            if (await AskForNewBundle() is false)
+                return;
+
+            DialogHelper.ShowLoadingDialog(CoreTools.Translate("Loading packages, please wait..."));
+
+            double open_version = await AddFromBundle(payload, format);
+            TelemetryHandler.ImportBundle(format);
+            HasUnsavedChanges = false;
+
+            DialogHelper.HideLoadingDialog();
+            if ((int)(open_version*10) != (int)(SerializableBundle.ExpectedVersion*10))
+            {   // Check only up to first decimal digit, prevent floating point precision error.
+                Logger.Warn($"The loaded bundle \"{source}\" is based on schema version {open_version}, " +
+                            $"while this UniGetUI build expects version {SerializableBundle.ExpectedVersion}." +
+                            $"\nThis should not be a problem if packages show up, but be careful");
+            }
+
+        }
+
+        public async Task OpenFromFile(string file)
         {
             try
             {
-                if (await AskForNewBundle() == false)
-                    return;
-
-                if (file is null)
-                {
-                    // Select file
-                    FileOpenPicker picker = new(MainApp.Instance.MainWindow.GetWindowHandle());
-                    file = picker.Show(["*.ubundle", "*.json", "*.yaml", "*.xml"]);
-                    if (file == String.Empty)
-                        return;
-                }
-
                 DialogHelper.ShowLoadingDialog(CoreTools.Translate("Loading packages, please wait..."));
-
-                // Read file
                 BundleFormatType formatType;
                 string EXT = file.Split('.')[^1].ToLower();
                 if (EXT == "yaml")
@@ -483,19 +477,8 @@ namespace UniGetUI.Interface.SoftwarePages
                     formatType = BundleFormatType.UBUNDLE;
 
                 string fileContent = await File.ReadAllTextAsync(file);
-
-                double open_version = await AddFromBundle(fileContent, formatType);
-                TelemetryHandler.ImportBundle(formatType);
-                HasUnsavedChanges = false;
-
                 DialogHelper.HideLoadingDialog();
-
-                if ((int)(open_version*10) != (int)(SerializableBundle.ExpectedVersion*10))
-                {   // Check only up to first decimal digit, prevent floating point precision error.
-                    Logger.Warn($"The loaded bundle \"{file}\" is based on schema version {open_version}, " +
-                                $"while this UniGetUI build expects version {SerializableBundle.ExpectedVersion}." +
-                                $"\nThis should not be a problem if packages show up, but be careful");
-                }
+                await OpenFromString(fileContent, formatType, file);
             }
             catch (Exception ex)
             {
@@ -516,13 +499,26 @@ namespace UniGetUI.Interface.SoftwarePages
             }
         }
 
+        public async Task AskOpenFromFile()
+        {
+            if (await AskForNewBundle() is false)
+                return;
+
+            FileOpenPicker picker = new(MainApp.Instance.MainWindow.GetWindowHandle());
+            string file = picker.Show(["*.ubundle", "*.json", "*.yaml", "*.xml"]);
+            if (file == String.Empty)
+                return;
+
+            await OpenFromFile(file);
+        }
+
         public async Task SaveFile()
         {
             try
             {
                 // Get file
                 string defaultName = CoreTools.Translate("Package bundle") + ".ubundle";
-                string file = (new FileSavePicker(MainApp.Instance.MainWindow.GetWindowHandle())).Show(["*.ubundle", "*.json", "*.yaml", "*.xml"], defaultName);
+                string file = (new FileSavePicker(MainApp.Instance.MainWindow.GetWindowHandle())).Show(["*.ubundle", "*.json"], defaultName);
                 if (file != String.Empty)
                 {
                     // Loading dialog
@@ -531,11 +527,7 @@ namespace UniGetUI.Interface.SoftwarePages
                     // Select appropriate format
                     BundleFormatType formatType;
                     string EXT = file.Split('.')[^1].ToLower();
-                    if (EXT == "yaml")
-                        formatType = BundleFormatType.YAML;
-                    else if (EXT == "xml")
-                        formatType = BundleFormatType.XML;
-                    else if (EXT == "json")
+                    if (EXT == "json")
                         formatType = BundleFormatType.JSON;
                     else if (EXT == "ubundle")
                         formatType = BundleFormatType.UBUNDLE;
@@ -543,7 +535,7 @@ namespace UniGetUI.Interface.SoftwarePages
                         formatType = BundleFormatType.UBUNDLE;
 
                     // Save serialized data
-                    await File.WriteAllTextAsync(file, await CreateBundle(Loader.Packages, formatType));
+                    await File.WriteAllTextAsync(file, await CreateBundle(Loader.Packages));
                     TelemetryHandler.ExportBundle(formatType);
 
                     DialogHelper.HideLoadingDialog();
@@ -578,9 +570,9 @@ namespace UniGetUI.Interface.SoftwarePages
             }
         }
 
-        public static async Task<string> CreateBundle(IReadOnlyList<IPackage> unsorted_packages, BundleFormatType formatType = BundleFormatType.UBUNDLE)
+        public static async Task<string> CreateBundle(IReadOnlyList<IPackage> unsorted_packages)
         {
-            SerializableBundle exportable = new();
+            SerializableBundle exportableData = new();
 
             List<IPackage> packages = unsorted_packages.ToList();
             packages.Sort(Comparison);
@@ -595,39 +587,15 @@ namespace UniGetUI.Interface.SoftwarePages
             foreach (IPackage package in packages)
             {
                 if (package is Package && !package.Source.IsVirtualManager)
-                    exportable.packages.Add(await Task.Run(package.AsSerializable));
+                    exportableData.packages.Add(await package.AsSerializableAsync());
                 else
-                    exportable.incompatible_packages.Add(package.AsSerializable_Incompatible());
+                    exportableData.incompatible_packages.Add(package.AsSerializable_Incompatible());
             }
 
-            Logger.Debug("Finished loading serializable objects. Serializing with format " + formatType);
-            string ExportableData;
-
-            if (formatType is BundleFormatType.JSON or BundleFormatType.UBUNDLE)
-                ExportableData = JsonSerializer.Serialize(
-                    exportable,
-                    SerializationHelpers.DefaultOptions);
-
-            else if (formatType is BundleFormatType.YAML)
-            {
-                ISerializer serializer = new SerializerBuilder()
-                    .Build();
-                ExportableData = serializer.Serialize(exportable);
-            }
-            else
-            {
-                string tempfile = Path.GetTempFileName();
-                StreamWriter writer = new(tempfile);
-                XmlSerializer serializer = new(typeof(SerializableBundle));
-                serializer.Serialize(writer, exportable);
-                writer.Close();
-                ExportableData = await File.ReadAllTextAsync(tempfile);
-                File.Delete(tempfile);
-            }
-
+            Logger.Debug("Finished loading serializable objects.");
+            string exportablePayload = exportableData.AsJsonString();
             Logger.Debug("Serialization finished successfully");
-
-            return ExportableData;
+            return exportablePayload;
         }
 
         public async Task<double> AddFromBundle(string content, BundleFormatType format)
@@ -651,18 +619,102 @@ namespace UniGetUI.Interface.SoftwarePages
 
             DeserializedData = await Task.Run(() =>
             {
-                return new SerializableBundle(JsonNode.Parse(content) ?? throw new Exception("Could not parse JSON object"));
+                return new SerializableBundle(JsonNode.Parse(content) ?? throw new JsonException("Could not parse JSON object"));
             });
 
             List<IPackage> packages = [];
 
+
+            bool showReport = false;
+            var packageReport = new Dictionary<string, List<BundleReportEntry>>();
+            bool AllowCLIParameters =
+                SecureSettings.Get(SecureSettings.K.AllowCLIArguments) &&
+                SecureSettings.Get(SecureSettings.K.AllowImportingCLIArguments);
+
+            bool AllowPrePostOps =
+                SecureSettings.Get(SecureSettings.K.AllowPrePostOpCommand) &&
+                SecureSettings.Get(SecureSettings.K.AllowImportPrePostOpCommands);
+
+
             foreach (var pkg in DeserializedData.packages)
+            {
+                var opts = pkg.InstallationOptions;
+
+                if (opts.CustomParameters_Install.Where(x => x.Any()).Any())
+                {
+                    showReport = true;
+                    if (!packageReport.ContainsKey(pkg.Id)) packageReport[pkg.Id] = new();
+                    packageReport[pkg.Id].Add(new($"Custom install arguments: [{string.Join(", ", opts.CustomParameters_Install)}]", AllowCLIParameters));
+                    if(!AllowCLIParameters) opts.CustomParameters_Install.Clear();
+                }
+                if (opts.CustomParameters_Update.Where(x => x.Any()).Any())
+                {
+                    showReport = true;
+                    if (!packageReport.ContainsKey(pkg.Id)) packageReport[pkg.Id] = new();
+                    packageReport[pkg.Id].Add(new($"Custom update arguments: [{string.Join(", ", opts.CustomParameters_Update)}]", AllowCLIParameters));
+                    if(!AllowCLIParameters) opts.CustomParameters_Update.Clear();
+                }
+                if (opts.CustomParameters_Uninstall.Where(x => x.Any()).Any())
+                {
+                    showReport = true;
+                    if (!packageReport.ContainsKey(pkg.Id)) packageReport[pkg.Id] = new();
+                    packageReport[pkg.Id].Add(new($"Custom uninstall arguments: [{string.Join(", ", opts.CustomParameters_Uninstall)}]", AllowCLIParameters));
+                    if(!AllowCLIParameters) opts.CustomParameters_Uninstall.Clear();
+                }
+
+                if (opts.PreInstallCommand.Any())
+                {
+                    showReport = true;
+                    if (!packageReport.ContainsKey(pkg.Id)) packageReport[pkg.Id] = new();
+                    packageReport[pkg.Id].Add(new($"Pre-install command: {opts.PreInstallCommand}", AllowPrePostOps));
+                    if (!AllowPrePostOps) opts.PreInstallCommand = "";
+                }
+                if (opts.PostInstallCommand.Any())
+                {
+                    showReport = true;
+                    if (!packageReport.ContainsKey(pkg.Id)) packageReport[pkg.Id] = new();
+                    packageReport[pkg.Id].Add(new($"Post-install command: {opts.PostInstallCommand}", AllowPrePostOps));
+                    if (!AllowPrePostOps) opts.PostInstallCommand = "";
+                }
+                if (opts.PreUpdateCommand.Any())
+                {
+                    showReport = true;
+                    if (!packageReport.ContainsKey(pkg.Id)) packageReport[pkg.Id] = new();
+                    packageReport[pkg.Id].Add(new($"Pre-update command: {opts.PreUpdateCommand}", AllowPrePostOps));
+                    if (!AllowPrePostOps) opts.PreUpdateCommand = "";
+                }
+                if (opts.PostUpdateCommand.Any())
+                {
+                    showReport = true;
+                    if (!packageReport.ContainsKey(pkg.Id)) packageReport[pkg.Id] = new();
+                    packageReport[pkg.Id].Add(new($"Post-update command: {opts.PostUpdateCommand}", AllowPrePostOps));
+                    if (!AllowPrePostOps) opts.PostUpdateCommand = "";
+                }
+                if (opts.PreUninstallCommand.Any())
+                {
+                    showReport = true;
+                    if (!packageReport.ContainsKey(pkg.Id)) packageReport[pkg.Id] = new();
+                    packageReport[pkg.Id].Add(new($"Pre-uninstall command: {opts.PreUninstallCommand}", AllowPrePostOps));
+                    if (!AllowPrePostOps) opts.PreUninstallCommand = "";
+                }
+                if (opts.PostUninstallCommand.Any())
+                {
+                    showReport = true;
+                    if (!packageReport.ContainsKey(pkg.Id)) packageReport[pkg.Id] = new();
+                    packageReport[pkg.Id].Add(new($"Post-uninstall command: {opts.PostUninstallCommand}", AllowPrePostOps));
+                    if (!AllowPrePostOps) opts.PostUninstallCommand = "";
+                }
+
+                pkg.InstallationOptions = opts;
                 packages.Add(DeserializePackage(pkg));
+            }
 
             foreach (var pkg in DeserializedData.incompatible_packages)
                 packages.Add(DeserializeIncompatiblePackage(pkg, NullSource.Instance));
 
             await PEInterface.PackageBundlesLoader.AddPackagesAsync(packages);
+
+            if(showReport) _ = DialogHelper.ShowBundleSecurityReport(packageReport);
             return DeserializedData.export_version;
         }
 
